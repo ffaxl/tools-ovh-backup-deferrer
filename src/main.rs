@@ -25,10 +25,10 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let client = match Client::connect(config.base_url.clone(), config.credentials.clone()).await {
+    let client = match Client::new(config.base_url.clone(), config.credentials.clone()) {
         Ok(client) => client,
         Err(error) => {
-            error!(%error, "provider clock unreachable");
+            error!(%error, "HTTP client setup failed");
             return ExitCode::FAILURE;
         }
     };

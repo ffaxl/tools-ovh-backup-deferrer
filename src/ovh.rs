@@ -7,7 +7,6 @@ use jiff::Timestamp;
 use jiff::civil::Time;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Method, RequestBuilder};
-use serde::de::DeserializeOwned;
 use sha1::{Digest, Sha1};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -39,6 +38,8 @@ impl fmt::Debug for Credentials {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("cannot set up the HTTP client")]
+    Setup(#[source] reqwest::Error),
     #[error("{method} {url} failed")]
     Transport {
         method: Method,
@@ -52,13 +53,6 @@ pub enum Error {
         url: String,
         status: reqwest::StatusCode,
         body: String,
-    },
-    #[error("{method} {url} returned an unexpected body")]
-    Decode {
-        method: Method,
-        url: String,
-        #[source]
-        source: serde_json::Error,
     },
 }
 
@@ -79,32 +73,18 @@ pub struct Client {
     http: reqwest::Client,
     base_url: String,
     credentials: Credentials,
-    /// Seconds the provider's clock runs ahead of the local one.
-    clock_delta: i64,
 }
 
 impl Client {
-    /// Reads the provider's clock once, so request timestamps follow it rather than the local one.
-    pub async fn connect(
-        base_url: impl Into<String>,
-        credentials: Credentials,
-    ) -> Result<Self, Error> {
-        let base_url = base_url.into();
-        let url = format!("{base_url}/auth/time");
+    pub fn new(base_url: impl Into<String>, credentials: Credentials) -> Result<Self, Error> {
         let http = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .build()
-            .map_err(|source| transport(&Method::GET, &url, source))?;
-        let provider_time: i64 = decode(
-            &Method::GET,
-            &url,
-            &send(&Method::GET, &url, http.get(&url)).await?,
-        )?;
+            .map_err(Error::Setup)?;
         Ok(Self {
             http,
-            base_url,
+            base_url: base_url.into(),
             credentials,
-            clock_delta: provider_time - Timestamp::now().as_second(),
         })
     }
 
@@ -116,7 +96,7 @@ impl Client {
     }
 
     async fn signed(&self, method: Method, url: &str, body: String) -> Result<String, Error> {
-        let timestamp = Timestamp::now().as_second() + self.clock_delta;
+        let timestamp = Timestamp::now().as_second();
         let credentials = &self.credentials;
         let mut request = self
             .http
@@ -161,14 +141,6 @@ async fn send(method: &Method, url: &str, request: RequestBuilder) -> Result<Str
         });
     }
     Ok(body)
-}
-
-fn decode<T: DeserializeOwned>(method: &Method, url: &str, body: &str) -> Result<T, Error> {
-    serde_json::from_str(body).map_err(|source| Error::Decode {
-        method: method.clone(),
-        url: url.into(),
-        source,
-    })
 }
 
 fn transport(method: &Method, url: &str, source: reqwest::Error) -> Error {

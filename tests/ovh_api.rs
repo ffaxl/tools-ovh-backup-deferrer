@@ -7,13 +7,13 @@ use ovh_autobackup_deferrer::ovh::{self, signature};
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
-use common::{APPLICATION_KEY, APPLICATION_SECRET, CONSUMER_KEY, provider_now};
+use common::{APPLICATION_KEY, APPLICATION_SECRET, CONSUMER_KEY};
 
 const SERVICE: &str = "vps-aaaa.vps.ovh.net";
 
 #[tokio::test]
 async fn reschedules_with_a_signed_body() -> Result<(), Box<dyn Error>> {
-    let server = common::provider().await;
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(format!(
             "/1.0/vps/{SERVICE}/automatedBackup/reschedule"
@@ -27,8 +27,7 @@ async fn reschedules_with_a_signed_body() -> Result<(), Box<dyn Error>> {
         .mount(&server)
         .await;
 
-    common::client(&server)
-        .await?
+    common::client(&server)?
         .reschedule(SERVICE, time(13, 40, 0, 0))
         .await?;
     Ok(())
@@ -36,7 +35,7 @@ async fn reschedules_with_a_signed_body() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn refusal_is_an_error_carrying_the_status() -> Result<(), Box<dyn Error>> {
-    let server = common::provider().await;
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(format!(
             "/1.0/vps/{SERVICE}/automatedBackup/reschedule"
@@ -47,8 +46,7 @@ async fn refusal_is_an_error_carrying_the_status() -> Result<(), Box<dyn Error>>
         .mount(&server)
         .await;
 
-    let error = common::client(&server)
-        .await?
+    let error = common::client(&server)?
         .reschedule(SERVICE, time(13, 40, 0, 0))
         .await
         .err();
@@ -61,7 +59,7 @@ async fn refusal_is_an_error_carrying_the_status() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// Matches only requests carrying a valid signature over a timestamp on the provider's clock.
+/// Matches only requests carrying a valid signature over a timestamp from the local clock.
 pub struct Signed {
     /// The origin the client addressed; wiremock reports requests against `localhost` instead.
     origin: String,
@@ -105,7 +103,7 @@ impl Match for Signed {
         );
         application == APPLICATION_KEY
             && consumer == CONSUMER_KEY
-            && (provider_now() - timestamp).abs() <= 5
+            && (jiff::Timestamp::now().as_second() - timestamp).abs() <= 5
             && sent == expected
     }
 }
