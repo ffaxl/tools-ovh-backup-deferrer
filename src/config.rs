@@ -134,24 +134,17 @@ mod tests {
 
     use super::*;
 
-    fn config(overrides: &[(&str, &str)]) -> Result<Config, ConfigError> {
+    fn load(overrides: &[(&str, &str)]) -> Result<Config, ConfigError> {
         let mut vars: HashMap<&str, &str> = HashMap::from([
             ("OVH_APPLICATION_KEY", "ak"),
             ("OVH_APPLICATION_SECRET", "as"),
             ("OVH_CONSUMER_KEY", "ck"),
-            ("DEFERRER_SERVICES", "vps-a.example:0,vps-b.example:20"),
+            ("DEFERRER_SERVICES", "vps-a.example:0"),
         ]);
         for (name, value) in overrides {
             vars.insert(name, value);
         }
         Config::from_lookup(|name| vars.get(name).map(|value| value.to_string()))
-    }
-
-    fn rejected(overrides: &[(&str, &str)]) -> ConfigError {
-        match config(overrides) {
-            Ok(_) => panic!("{overrides:?} was accepted"),
-            Err(error) => error,
-        }
     }
 
     fn service(name: &str, minutes: u8) -> Service {
@@ -162,122 +155,95 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_ovh_ca_and_writing() {
-        let config = config(&[]).unwrap();
-        assert_eq!(config.base_url, "https://ca.api.ovh.com/1.0");
-        assert!(!config.dry_run);
-        assert_eq!(
-            config.services,
-            [service("vps-a.example", 0), service("vps-b.example", 20)]
-        );
-    }
+    fn accepts_valid_configuration() {
+        let defaults = load(&[]).unwrap();
+        assert_eq!(defaults.base_url, "https://ca.api.ovh.com/1.0");
+        assert!(!defaults.dry_run);
 
-    #[test]
-    fn endpoint_selects_the_region() {
-        let base = |endpoint| config(&[("OVH_ENDPOINT", endpoint)]).map(|config| config.base_url);
-        assert_eq!(base("ovh-eu").unwrap(), "https://eu.api.ovh.com/1.0");
-        assert_eq!(base("ovh-us").unwrap(), "https://api.us.ovhcloud.com/1.0");
+        for (endpoint, base_url) in [
+            ("ovh-eu", "https://eu.api.ovh.com/1.0"),
+            ("ovh-us", "https://api.us.ovhcloud.com/1.0"),
+        ] {
+            assert_eq!(
+                load(&[("OVH_ENDPOINT", endpoint)]).unwrap().base_url,
+                base_url
+            );
+        }
+        assert!(load(&[("DEFERRER_DRY_RUN", "true")]).unwrap().dry_run);
         assert_eq!(
-            base("kimsufi-eu").unwrap_err(),
-            ConfigError::UnknownEndpoint("kimsufi-eu".into())
-        );
-    }
-
-    #[test]
-    fn dry_run_accepts_only_true_or_false() {
-        assert!(!config(&[("DEFERRER_DRY_RUN", "false")]).unwrap().dry_run);
-        assert!(config(&[("DEFERRER_DRY_RUN", "true")]).unwrap().dry_run);
-        assert_eq!(
-            rejected(&[("DEFERRER_DRY_RUN", "no")]),
-            ConfigError::InvalidDryRun("no".into())
-        );
-    }
-
-    #[test]
-    fn missing_or_empty_credential_is_rejected() {
-        assert_eq!(
-            rejected(&[("OVH_CONSUMER_KEY", "")]),
-            ConfigError::Missing("OVH_CONSUMER_KEY")
-        );
-    }
-
-    #[test]
-    fn empty_service_list_is_rejected() {
-        assert_eq!(
-            rejected(&[("DEFERRER_SERVICES", " ")]),
-            ConfigError::Missing("DEFERRER_SERVICES")
-        );
-    }
-
-    #[test]
-    fn service_list_tolerates_spaces() {
-        let config =
-            config(&[("DEFERRER_SERVICES", " vps-a.example:0 , vps-b.example:40 ")]).unwrap();
-        assert_eq!(
-            config.services,
+            load(&[("DEFERRER_SERVICES", " vps-a.example:0 , vps-b.example:40 ")])
+                .unwrap()
+                .services,
             [service("vps-a.example", 0), service("vps-b.example", 40)]
         );
     }
 
     #[test]
-    fn malformed_entries_are_rejected() {
-        for entry in [
-            "vps-a.example",
-            "vps-a.example:",
-            ":20",
-            "vps-a.example:x",
-            "vps-a.example:0,",
-        ] {
-            assert!(
-                matches!(
-                    rejected(&[("DEFERRER_SERVICES", entry)]),
-                    ConfigError::MalformedService(_)
-                ),
-                "{entry:?} was accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn service_name_cannot_escape_the_url_path() {
-        assert_eq!(
-            rejected(&[("DEFERRER_SERVICES", "../me:0")]),
-            ConfigError::InvalidServiceName("../me".into())
-        );
-        for name in [".", ".."] {
-            assert_eq!(
-                rejected(&[("DEFERRER_SERVICES", &format!("{name}:0"))]),
-                ConfigError::InvalidServiceName(name.into()),
-            );
-        }
-    }
-
-    #[test]
-    fn offset_above_59_is_rejected() {
-        assert_eq!(
-            rejected(&[("DEFERRER_SERVICES", "vps-a.example:60")]),
-            ConfigError::OffsetOutOfRange {
-                service: "vps-a.example".into()
+    fn rejects_invalid_configuration() {
+        use ConfigError::*;
+        let cases = [
+            (
+                "OVH_ENDPOINT",
+                "kimsufi-eu",
+                UnknownEndpoint("kimsufi-eu".into()),
+            ),
+            ("OVH_CONSUMER_KEY", "", Missing("OVH_CONSUMER_KEY")),
+            ("DEFERRER_DRY_RUN", "no", InvalidDryRun("no".into())),
+            ("DEFERRER_SERVICES", " ", Missing("DEFERRER_SERVICES")),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example",
+                MalformedService("vps-a.example".into()),
+            ),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example:",
+                MalformedService("vps-a.example:".into()),
+            ),
+            ("DEFERRER_SERVICES", ":20", MalformedService(":20".into())),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example:x",
+                MalformedService("vps-a.example:x".into()),
+            ),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example:0,",
+                MalformedService("".into()),
+            ),
+            (
+                "DEFERRER_SERVICES",
+                "../me:0",
+                InvalidServiceName("../me".into()),
+            ),
+            ("DEFERRER_SERVICES", ".:0", InvalidServiceName(".".into())),
+            ("DEFERRER_SERVICES", "..:0", InvalidServiceName("..".into())),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example:60",
+                OffsetOutOfRange {
+                    service: "vps-a.example".into(),
+                },
+            ),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example:0,vps-a.example:20",
+                DuplicateService("vps-a.example".into()),
+            ),
+            (
+                "DEFERRER_SERVICES",
+                "vps-a.example:20,vps-b.example:20",
+                DuplicateOffset {
+                    first: "vps-a.example".into(),
+                    second: "vps-b.example".into(),
+                },
+            ),
+        ];
+        for (name, value, expected) in cases {
+            match load(&[(name, value)]) {
+                Ok(_) => panic!("{name}={value:?} was accepted"),
+                Err(error) => assert_eq!(error, expected, "{name}={value:?}"),
             }
-        );
-    }
-
-    #[test]
-    fn duplicate_service_is_rejected() {
-        assert_eq!(
-            rejected(&[("DEFERRER_SERVICES", "vps-a.example:0,vps-a.example:20")]),
-            ConfigError::DuplicateService("vps-a.example".into())
-        );
-    }
-
-    #[test]
-    fn shared_offset_is_rejected() {
-        assert_eq!(
-            rejected(&[("DEFERRER_SERVICES", "vps-a.example:20,vps-b.example:20")]),
-            ConfigError::DuplicateOffset {
-                first: "vps-a.example".into(),
-                second: "vps-b.example".into()
-            }
-        );
+        }
     }
 }

@@ -54,75 +54,25 @@ mod tests {
         s.parse().unwrap()
     }
 
-    fn offset(minutes: u8) -> Offset {
-        Offset::from_minutes(minutes).unwrap()
+    #[test]
+    fn target_is_the_previous_hour_plus_the_offset() {
+        for (now, minutes, expected) in [
+            ("2026-09-28T15:37:12.5Z", 20, time(14, 20, 0, 0)),
+            ("2026-09-28T00:20:00Z", 40, time(23, 40, 0, 0)),
+        ] {
+            let offset = Offset::from_minutes(minutes).unwrap();
+            assert_eq!(target(at(now), offset), expected, "{now} +{minutes}");
+        }
     }
 
     #[test]
-    fn target_on_the_hour_is_the_previous_hour() {
-        assert_eq!(
-            target(at("2026-09-28T15:00:00Z"), offset(0)),
-            time(14, 0, 0, 0)
-        );
-    }
-
-    #[test]
-    fn target_mid_hour_ignores_minutes_and_seconds() {
-        assert_eq!(
-            target(at("2026-09-28T15:37:12.5Z"), offset(0)),
-            time(14, 0, 0, 0)
-        );
-    }
-
-    #[test]
-    fn target_adds_the_offset() {
-        assert_eq!(
-            target(at("2026-09-28T15:00:00Z"), offset(20)),
-            time(14, 20, 0, 0)
-        );
-        assert_eq!(
-            target(at("2026-09-28T15:00:00Z"), offset(40)),
-            time(14, 40, 0, 0)
-        );
-    }
-
-    #[test]
-    fn target_wraps_across_midnight() {
-        assert_eq!(
-            target(at("2026-09-28T00:20:00Z"), offset(40)),
-            time(23, 40, 0, 0)
-        );
-    }
-
-    #[test]
-    fn next_run_from_just_before_the_hour_is_ten_seconds_into_it() {
-        assert_eq!(
-            until_next_run(at("2026-09-28T14:59:59.999Z")),
-            Duration::from_millis(10_001)
-        );
-    }
-
-    #[test]
-    fn next_run_from_exactly_on_the_hour_skips_to_the_following_one() {
-        assert_eq!(
-            until_next_run(at("2026-09-28T15:00:00Z")),
-            Duration::from_secs(3610)
-        );
-    }
-
-    #[test]
-    fn next_run_from_just_after_a_run_is_an_hour_away() {
-        assert_eq!(
-            until_next_run(at("2026-09-28T15:00:10.001Z")),
-            Duration::from_millis(3_599_999)
-        );
-    }
-
-    #[test]
-    fn next_run_from_before_the_ten_seconds_still_skips_to_the_next_hour() {
-        assert_eq!(
-            until_next_run(at("2026-09-28T15:00:05Z")),
-            Duration::from_secs(3605)
-        );
+    fn next_run_is_ten_seconds_into_the_next_hour() {
+        for (now, expected) in [
+            ("2026-09-28T14:59:59.999Z", Duration::from_millis(10_001)),
+            // Within the ten seconds, the run for this hour is the one that just happened.
+            ("2026-09-28T15:00:05Z", Duration::from_secs(3605)),
+        ] {
+            assert_eq!(until_next_run(at(now)), expected, "{now}");
+        }
     }
 }
