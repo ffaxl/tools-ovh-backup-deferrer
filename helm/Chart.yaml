@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ovh-autobackup-deferrer
+description: Keeps the OVHcloud VPS automated backup schedule in the recent past so it never fires
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
