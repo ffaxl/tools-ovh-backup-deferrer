@@ -3,7 +3,6 @@
 use crate::ovh::Credentials;
 use crate::schedule::Offset;
 
-#[derive(Debug)]
 pub struct Config {
     pub base_url: String,
     pub credentials: Credentials,
@@ -11,7 +10,7 @@ pub struct Config {
     pub dry_run: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Service {
     pub name: String,
     pub offset: Offset,
@@ -148,6 +147,13 @@ mod tests {
         Config::from_lookup(|name| vars.get(name).map(|value| value.to_string()))
     }
 
+    fn rejected(overrides: &[(&str, &str)]) -> ConfigError {
+        match config(overrides) {
+            Ok(_) => panic!("{overrides:?} was accepted"),
+            Err(error) => error,
+        }
+    }
+
     fn service(name: &str, minutes: u8) -> Service {
         Service {
             name: name.into(),
@@ -182,7 +188,7 @@ mod tests {
         assert!(!config(&[("DEFERRER_DRY_RUN", "false")]).unwrap().dry_run);
         assert!(config(&[("DEFERRER_DRY_RUN", "true")]).unwrap().dry_run);
         assert_eq!(
-            config(&[("DEFERRER_DRY_RUN", "no")]).unwrap_err(),
+            rejected(&[("DEFERRER_DRY_RUN", "no")]),
             ConfigError::InvalidDryRun("no".into())
         );
     }
@@ -190,7 +196,7 @@ mod tests {
     #[test]
     fn missing_or_empty_credential_is_rejected() {
         assert_eq!(
-            config(&[("OVH_CONSUMER_KEY", "")]).unwrap_err(),
+            rejected(&[("OVH_CONSUMER_KEY", "")]),
             ConfigError::Missing("OVH_CONSUMER_KEY")
         );
     }
@@ -198,7 +204,7 @@ mod tests {
     #[test]
     fn empty_service_list_is_rejected() {
         assert_eq!(
-            config(&[("DEFERRER_SERVICES", " ")]).unwrap_err(),
+            rejected(&[("DEFERRER_SERVICES", " ")]),
             ConfigError::Missing("DEFERRER_SERVICES")
         );
     }
@@ -224,7 +230,7 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    config(&[("DEFERRER_SERVICES", entry)]).unwrap_err(),
+                    rejected(&[("DEFERRER_SERVICES", entry)]),
                     ConfigError::MalformedService(_)
                 ),
                 "{entry:?} was accepted"
@@ -235,12 +241,12 @@ mod tests {
     #[test]
     fn service_name_cannot_escape_the_url_path() {
         assert_eq!(
-            config(&[("DEFERRER_SERVICES", "../me:0")]).unwrap_err(),
+            rejected(&[("DEFERRER_SERVICES", "../me:0")]),
             ConfigError::InvalidServiceName("../me".into())
         );
         for name in [".", ".."] {
             assert_eq!(
-                config(&[("DEFERRER_SERVICES", &format!("{name}:0"))]).unwrap_err(),
+                rejected(&[("DEFERRER_SERVICES", &format!("{name}:0"))]),
                 ConfigError::InvalidServiceName(name.into()),
             );
         }
@@ -249,7 +255,7 @@ mod tests {
     #[test]
     fn offset_above_59_is_rejected() {
         assert_eq!(
-            config(&[("DEFERRER_SERVICES", "vps-a.example:60")]).unwrap_err(),
+            rejected(&[("DEFERRER_SERVICES", "vps-a.example:60")]),
             ConfigError::OffsetOutOfRange {
                 service: "vps-a.example".into()
             }
@@ -259,7 +265,7 @@ mod tests {
     #[test]
     fn duplicate_service_is_rejected() {
         assert_eq!(
-            config(&[("DEFERRER_SERVICES", "vps-a.example:0,vps-a.example:20")]).unwrap_err(),
+            rejected(&[("DEFERRER_SERVICES", "vps-a.example:0,vps-a.example:20")]),
             ConfigError::DuplicateService("vps-a.example".into())
         );
     }
@@ -267,7 +273,7 @@ mod tests {
     #[test]
     fn shared_offset_is_rejected() {
         assert_eq!(
-            config(&[("DEFERRER_SERVICES", "vps-a.example:20,vps-b.example:20")]).unwrap_err(),
+            rejected(&[("DEFERRER_SERVICES", "vps-a.example:20,vps-b.example:20")]),
             ConfigError::DuplicateOffset {
                 first: "vps-a.example".into(),
                 second: "vps-b.example".into()

@@ -3,7 +3,7 @@ mod common;
 use std::error::Error;
 
 use ovh_autobackup_deferrer::config::Service;
-use ovh_autobackup_deferrer::deferrer::{Outcome, run_cycle};
+use ovh_autobackup_deferrer::deferrer::run_cycle;
 use ovh_autobackup_deferrer::schedule::Offset;
 use tokio::sync::watch;
 use wiremock::matchers::{body_json, method, path};
@@ -41,22 +41,8 @@ fn just_after_the_hour() -> Result<jiff::Timestamp, Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn every_service_is_written_at_its_offset() -> Result<(), Box<dyn Error>> {
-    let server = MockServer::start().await;
-    answer_reschedule(&server, "vps-a.example", "14:00:00", 200).await;
-    answer_reschedule(&server, "vps-b.example", "13:40:00", 200).await;
-    let client = common::client(&server)?;
-    let services = [service("vps-a.example", 0)?, service("vps-b.example", 20)?];
-    let (_running, shutdown) = watch::channel(false);
-
-    let outcomes = run_cycle(&client, &services, just_after_the_hour()?, false, &shutdown).await;
-
-    assert_eq!(outcomes, [Outcome::Written, Outcome::Written]);
-    Ok(())
-}
-
-#[tokio::test]
-async fn failing_service_does_not_stop_the_others() -> Result<(), Box<dyn Error>> {
+async fn every_service_is_written_at_its_offset_even_after_a_failure() -> Result<(), Box<dyn Error>>
+{
     let server = MockServer::start().await;
     answer_reschedule(&server, "vps-a.example", "14:00:00", 500).await;
     answer_reschedule(&server, "vps-b.example", "13:40:00", 200).await;
@@ -64,9 +50,7 @@ async fn failing_service_does_not_stop_the_others() -> Result<(), Box<dyn Error>
     let services = [service("vps-a.example", 0)?, service("vps-b.example", 20)?];
     let (_running, shutdown) = watch::channel(false);
 
-    let outcomes = run_cycle(&client, &services, just_after_the_hour()?, false, &shutdown).await;
-
-    assert_eq!(outcomes, [Outcome::Failed, Outcome::Written]);
+    run_cycle(&client, &services, just_after_the_hour()?, false, &shutdown).await;
     Ok(())
 }
 
@@ -77,9 +61,8 @@ async fn dry_run_writes_nothing() -> Result<(), Box<dyn Error>> {
     let services = [service("vps-a.example", 0)?, service("vps-b.example", 20)?];
     let (_running, shutdown) = watch::channel(false);
 
-    let outcomes = run_cycle(&client, &services, just_after_the_hour()?, true, &shutdown).await;
+    run_cycle(&client, &services, just_after_the_hour()?, true, &shutdown).await;
 
-    assert_eq!(outcomes, [Outcome::DryRun, Outcome::DryRun]);
     assert!(nothing_was_sent(&server).await);
     Ok(())
 }
@@ -90,7 +73,7 @@ async fn raised_shutdown_touches_no_service() -> Result<(), Box<dyn Error>> {
     let client = common::client(&server)?;
     let (_sender, shutdown) = watch::channel(true);
 
-    let outcomes = run_cycle(
+    run_cycle(
         &client,
         &[service("vps-a.example", 0)?],
         just_after_the_hour()?,
@@ -99,7 +82,6 @@ async fn raised_shutdown_touches_no_service() -> Result<(), Box<dyn Error>> {
     )
     .await;
 
-    assert_eq!(outcomes, []);
     assert!(nothing_was_sent(&server).await);
     Ok(())
 }

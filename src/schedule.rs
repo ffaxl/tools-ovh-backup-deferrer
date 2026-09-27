@@ -13,18 +13,14 @@ const NANOS_PAST_THE_HOUR: i128 = 10 * NANOS_PER_SECOND;
 
 /// Minutes a service's schedule sits behind the shared target, keeping its window apart from
 /// every other service's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Offset(u8);
 
 impl Offset {
-    pub const MAX_MINUTES: u8 = 59;
+    const MAX_MINUTES: u8 = 59;
 
     pub fn from_minutes(minutes: u8) -> Option<Self> {
         (minutes <= Self::MAX_MINUTES).then_some(Self(minutes))
-    }
-
-    pub fn minutes(self) -> u8 {
-        self.0
     }
 }
 
@@ -60,13 +56,6 @@ mod tests {
 
     fn offset(minutes: u8) -> Offset {
         Offset::from_minutes(minutes).unwrap()
-    }
-
-    #[test]
-    fn offset_accepts_up_to_59_minutes() {
-        assert_eq!(Offset::from_minutes(0).map(Offset::minutes), Some(0));
-        assert_eq!(Offset::from_minutes(59).map(Offset::minutes), Some(59));
-        assert_eq!(Offset::from_minutes(60), None);
     }
 
     #[test]

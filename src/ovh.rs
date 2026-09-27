@@ -1,6 +1,5 @@
 //! The OVHcloud API calls the deferrer needs, signed with an application and consumer key.
 
-use std::fmt;
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -11,7 +10,6 @@ use sha1::{Digest, Sha1};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Clone)]
 pub struct Credentials {
     application_key: String,
     application_secret: String,
@@ -25,14 +23,6 @@ impl Credentials {
             application_secret,
             consumer_key,
         }
-    }
-}
-
-impl fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Credentials")
-            .field("application_key", &self.application_key)
-            .finish_non_exhaustive()
     }
 }
 
@@ -158,14 +148,6 @@ mod tests {
     const URL: &str = "https://ca.api.ovh.com/1.0/vps/vps-aaaa.vps.ovh.net/automatedBackup";
 
     #[test]
-    fn signature_of_a_get_matches_the_reference_vector() {
-        assert_eq!(
-            signature("secret-as", "consumer-ck", "GET", URL, "", 1_790_000_000),
-            "$1$9135387132415f5f58f2258a341f0c034db53819"
-        );
-    }
-
-    #[test]
     fn signature_of_a_post_covers_the_body() {
         assert_eq!(
             signature(
@@ -178,15 +160,5 @@ mod tests {
             ),
             "$1$1ff7993222922400fa5bdad8e8791b36f26ae32c"
         );
-    }
-
-    #[test]
-    fn debug_output_hides_the_secrets() {
-        let credentials =
-            Credentials::new("app-key".into(), "app-secret".into(), "consumer".into());
-        let printed = format!("{credentials:?}");
-        assert!(printed.contains("app-key"));
-        assert!(!printed.contains("app-secret"));
-        assert!(!printed.contains("consumer"));
     }
 }

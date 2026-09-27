@@ -10,23 +10,6 @@ use crate::config::Service;
 use crate::ovh::Client;
 use crate::schedule;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outcome {
-    Written,
-    DryRun,
-    Failed,
-}
-
-impl Outcome {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Written => "written",
-            Self::DryRun => "dry-run",
-            Self::Failed => "failed",
-        }
-    }
-}
-
 /// Writes every service's target for `now`, one after another. A failure is logged and the
 /// next service still runs; a raised `shutdown` stops before the next service.
 pub async fn run_cycle(
@@ -35,15 +18,13 @@ pub async fn run_cycle(
     now: Timestamp,
     dry_run: bool,
     shutdown: &watch::Receiver<bool>,
-) -> Vec<Outcome> {
-    let mut outcomes = Vec::with_capacity(services.len());
+) {
     for service in services {
         if *shutdown.borrow() {
             break;
         }
-        outcomes.push(defer(client, service, now, dry_run).await);
+        defer(client, service, now, dry_run).await;
     }
-    outcomes
 }
 
 /// Runs a cycle now and then shortly after every full UTC hour until `shutdown` is raised.
@@ -63,22 +44,16 @@ pub async fn run(
     }
 }
 
-async fn defer(client: &Client, service: &Service, now: Timestamp, dry_run: bool) -> Outcome {
+async fn defer(client: &Client, service: &Service, now: Timestamp, dry_run: bool) {
     let name = service.name.as_str();
     let target = schedule::target(now, service.offset);
     if dry_run {
-        info!(service = name, %target, outcome = Outcome::DryRun.as_str());
-        return Outcome::DryRun;
+        info!(service = name, %target, outcome = "dry-run");
+        return;
     }
     match client.reschedule(name, target).await {
-        Ok(()) => {
-            info!(service = name, %target, outcome = Outcome::Written.as_str());
-            Outcome::Written
-        }
-        Err(error) => {
-            warn!(service = name, %target, outcome = Outcome::Failed.as_str(), error = chain(&error));
-            Outcome::Failed
-        }
+        Ok(()) => info!(service = name, %target, outcome = "written"),
+        Err(error) => warn!(service = name, %target, outcome = "failed", error = chain(&error)),
     }
 }
 

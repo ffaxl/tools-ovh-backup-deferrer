@@ -25,7 +25,7 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let client = match Client::new(config.base_url.clone(), config.credentials.clone()) {
+    let client = match Client::new(config.base_url, config.credentials) {
         Ok(client) => client,
         Err(error) => {
             error!(%error, "HTTP client setup failed");

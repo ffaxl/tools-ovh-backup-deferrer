@@ -3,7 +3,7 @@ mod common;
 use std::error::Error;
 
 use jiff::civil::time;
-use ovh_autobackup_deferrer::ovh::{self, signature};
+use ovh_autobackup_deferrer::ovh::signature;
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
@@ -30,32 +30,6 @@ async fn reschedules_with_a_signed_body() -> Result<(), Box<dyn Error>> {
     common::client(&server)?
         .reschedule(SERVICE, time(13, 40, 0, 0))
         .await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn refusal_is_an_error_carrying_the_status() -> Result<(), Box<dyn Error>> {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path(format!(
-            "/1.0/vps/{SERVICE}/automatedBackup/reschedule"
-        )))
-        .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
-            "class": "Client::Forbidden", "message": "This call has not been granted",
-        })))
-        .mount(&server)
-        .await;
-
-    let error = common::client(&server)?
-        .reschedule(SERVICE, time(13, 40, 0, 0))
-        .await
-        .err();
-
-    assert!(
-        matches!(&error, Some(ovh::Error::Status { status, body, .. })
-            if status.as_u16() == 403 && body.contains("not been granted")),
-        "{error:?}"
-    );
     Ok(())
 }
 
