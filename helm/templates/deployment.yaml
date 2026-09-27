@@ -16,8 +16,8 @@ spec:
       labels:
         {{- include "deferrer.labels" . | nindent 8 }}
       annotations:
-        # A changed secret does not reach a running pod; this rolls it.
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        # A changed secret does not reach a running pod; this rolls it on the next helm upgrade.
+        checksum/secret: {{ include "deferrer.secretChecksum" . }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

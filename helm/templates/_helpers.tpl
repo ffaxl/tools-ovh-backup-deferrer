@@ -21,7 +21,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 {{- $entries := list }}
 {{- range .Values.services }}
-{{- $entries = append $entries (printf "%s:%d" .name (int .offset)) }}
+{{- $name := required "every entry in services needs a name" .name }}
+{{- $offset := required (printf "service %s needs an offset" $name) .offset }}
+{{- $entries = append $entries (printf "%s:%d" $name (int $offset)) }}
 {{- end }}
 {{- join "," $entries }}
+{{- end }}
+
+{{- define "deferrer.secretChecksum" -}}
+{{- if .Values.credentials.existingSecret }}
+{{- (lookup "v1" "Secret" .Release.Namespace .Values.credentials.existingSecret).data | toJson | sha256sum }}
+{{- else }}
+{{- include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- end }}
 {{- end }}
