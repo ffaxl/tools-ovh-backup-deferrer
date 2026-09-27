@@ -1,0 +1,8 @@
+# Only non-default options. Add a threshold here when a lint fires on code that is
+# correct as written, and say in a comment which code and why - an unexplained
+# threshold is indistinguishable from silencing a real finding.
+
+# Cargo.toml denies unwrap_used and expect_used for the shipped code; a test that
+# unwraps fails loudly, which is what it is for.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
