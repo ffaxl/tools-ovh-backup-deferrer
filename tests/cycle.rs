@@ -45,7 +45,7 @@ async fn every_service_is_written_at_its_offset_even_after_a_failure() -> Result
 {
     let server = MockServer::start().await;
     answer_reschedule(&server, "vps-a.example", "14:00:00", 500).await;
-    answer_reschedule(&server, "vps-b.example", "13:40:00", 200).await;
+    answer_reschedule(&server, "vps-b.example", "14:20:00", 200).await;
     let client = common::client(&server)?;
     let services = [service("vps-a.example", 0)?, service("vps-b.example", 20)?];
     let (_running, shutdown) = watch::channel(false);

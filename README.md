@@ -4,8 +4,8 @@ Keeps the OVHcloud VPS *automated backup* schedule permanently in the recent pas
 backup — which stops the guest for up to a minute — never reaches its trigger time.
 
 At startup and then ten seconds after every full UTC hour, it sets every configured VPS's backup
-schedule to the start of the previous hour minus that VPS's own offset, whatever the schedule was.
-The schedule therefore sits one to two hours plus the offset in the past, and the provider, which
+schedule to the start of the previous hour plus that VPS's own offset, whatever the schedule was.
+The schedule therefore sits one to two hours minus the offset in the past, and the provider, which
 does not run a schedule that has already elapsed today, keeps postponing it to tomorrow.
 
 Two provider behaviours this rests on are observed, not documented by OVHcloud: the API's
@@ -20,7 +20,7 @@ backup of whatever they hold in place before deploying.
 
 - Per VPS and cycle: one `POST /vps/{service}/automatedBackup/reschedule`, nothing read first.
 - A failing VPS is logged and the cycle moves on; the next hour retries. The schedule sits at least
-  21 hours from firing, so the daemon can miss about twenty cycles before a backup runs.
+  22 hours from firing, so the daemon can miss about twenty cycles before a backup runs.
 - Offsets must differ between VPS: a backup pauses its guest, and two etcd members paused together
   lose quorum. Startup refuses a shared offset; keep them well apart, e.g. 0, 20 and 40.
 - Output is JSON logs on stdout, one line per VPS per cycle. There is no listener and no probe.

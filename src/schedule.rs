@@ -11,7 +11,7 @@ const NANOS_PER_SECOND: i128 = 1_000_000_000;
 /// Waking a little after the hour rather than on it leaves no doubt which hour `now` is in.
 const NANOS_PAST_THE_HOUR: i128 = 10 * NANOS_PER_SECOND;
 
-/// Minutes a service's schedule sits behind the shared target, keeping its window apart from
+/// Minutes past the hour at which a service's schedule is set, keeping its window apart from
 /// every other service's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Offset(u8);
@@ -24,12 +24,12 @@ impl Offset {
     }
 }
 
-/// The schedule to write at `now`: the start of the previous UTC hour, less the offset.
+/// The schedule to write at `now`: the start of the previous UTC hour, plus the offset.
 pub fn target(now: Timestamp, offset: Offset) -> Time {
     let hour = now.to_zoned(TimeZone::UTC).time().hour();
     Time::midnight()
         .wrapping_add(SignedDuration::from_hours(i64::from(hour)))
-        .wrapping_sub(SignedDuration::from_mins(60 + i64::from(offset.0)))
+        .wrapping_add(SignedDuration::from_mins(i64::from(offset.0) - 60))
 }
 
 /// How long to sleep from `now` until ten seconds past the start of the next UTC hour.
@@ -75,14 +75,14 @@ mod tests {
     }
 
     #[test]
-    fn target_subtracts_the_offset() {
+    fn target_adds_the_offset() {
         assert_eq!(
             target(at("2026-09-28T15:00:00Z"), offset(20)),
-            time(13, 40, 0, 0)
+            time(14, 20, 0, 0)
         );
         assert_eq!(
             target(at("2026-09-28T15:00:00Z"), offset(40)),
-            time(13, 20, 0, 0)
+            time(14, 40, 0, 0)
         );
     }
 
@@ -90,7 +90,7 @@ mod tests {
     fn target_wraps_across_midnight() {
         assert_eq!(
             target(at("2026-09-28T00:20:00Z"), offset(40)),
-            time(22, 20, 0, 0)
+            time(23, 40, 0, 0)
         );
     }
 
