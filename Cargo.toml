@@ -1,0 +1,28 @@
+[package]
+name = "ovh-autobackup-deferrer"
+version = "0.1.0"
+edition = "2024"
+description = "Keeps the OVHcloud VPS automated backup schedule in the recent past so it never fires"
+repository = "https://github.com/ffaxl/tools-ovh-backup-deferrer"
+
+[dependencies]
+hex = "0.4.3"
+jiff = { version = "0.2.37", features = ["serde"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha1 = "0.11.0"
+thiserror = "2.0.21"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+wiremock = "0.6.5"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+expect_used = "deny"
+unwrap_used = "deny"
