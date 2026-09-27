@@ -27,7 +27,9 @@ pub enum ConfigError {
     InvalidDryRun(String),
     #[error("DEFERRER_SERVICES entry {0:?} is not service:offset")]
     MalformedService(String),
-    #[error("service name {0:?} has characters other than letters, digits, '.' and '-'")]
+    #[error(
+        "service name {0:?} must start with a letter or digit and hold only those, '.' and '-'"
+    )]
     InvalidServiceName(String),
     #[error("offset of {service} must be 0 to 59 minutes")]
     OffsetOutOfRange { service: String },
@@ -82,6 +84,15 @@ fn base_url(endpoint: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether `name` can go into the request path verbatim: no separators, and no `.` or `..`
+/// that URL normalisation would resolve into a different path than the one signed.
+fn is_path_segment(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+}
+
 fn parse_services(list: &str) -> Result<Vec<Service>, ConfigError> {
     let mut services: Vec<Service> = Vec::new();
     for entry in list.split(',').map(str::trim) {
@@ -92,11 +103,7 @@ fn parse_services(list: &str) -> Result<Vec<Service>, ConfigError> {
             .ok_or_else(malformed)?;
         let minutes: u32 = minutes.parse().map_err(|_| malformed())?;
 
-        // The name goes into the request path verbatim.
-        if !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
-        {
+        if !is_path_segment(name) {
             return Err(ConfigError::InvalidServiceName(name.into()));
         }
         let offset = u8::try_from(minutes)
@@ -231,6 +238,12 @@ mod tests {
             config(&[("DEFERRER_SERVICES", "../me:0")]).unwrap_err(),
             ConfigError::InvalidServiceName("../me".into())
         );
+        for name in [".", ".."] {
+            assert_eq!(
+                config(&[("DEFERRER_SERVICES", &format!("{name}:0"))]).unwrap_err(),
+                ConfigError::InvalidServiceName(name.into()),
+            );
+        }
     }
 
     #[test]
