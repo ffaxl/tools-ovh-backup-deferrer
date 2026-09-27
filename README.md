@@ -52,7 +52,9 @@ Environment variables only.
      -d '{"accessRules":[{"method":"POST","path":"/vps/*/automatedBackup/reschedule"}]}'
    ```
 
-   Open the returned `validationUrl`, log in and confirm; the returned `consumerKey` is then valid.
+   Open the returned `validationUrl`, log in, choose an unlimited validity and confirm; the returned
+   `consumerKey` is then valid. A key that expires turns every cycle into a failure, and the backup
+   fires about a day later.
 3. VPS service names, if you do not have them at hand, are listed in the control panel or by
    `GET /vps`; the daemon's key cannot read them.
 
@@ -68,18 +70,16 @@ Without `DEFERRER_DRY_RUN=true` this writes the schedules.
 
 ## Deploying
 
-CI publishes the image to `ghcr.io/ffaxl/tools-ovh-backup-deferrer`: `sha-<commit>` and `latest`
-for every push to `main`, and `<version>` for every `v<version>` tag. The Helm chart in
-[helm/](helm/) runs it as a single-replica Deployment; [helm/values.yaml](helm/values.yaml)
-lists every setting.
+CI runs the tests on every pull request and push, and publishes the image to
+`ghcr.io/ffaxl/tools-ovh-backup-deferrer` only for a `v<version>` tag, tagged `<version>`. The Helm
+chart in [helm/](helm/) runs it as a single-replica Deployment, by default with the image of the
+chart's `appVersion`; [helm/values.yaml](helm/values.yaml) documents its settings.
 
 1. Note the current backup time of every VPS from the control panel, somewhere private; rollback
    writes these back.
 2. Write a values file, kept out of this repository, listing a single VPS at first:
 
    ```yaml
-   image:
-     tag: latest              # or digest: sha256:...; defaults to the chart's appVersion
    services:
      - name: vps-aaaa.vps.ovh.net
        offset: 0
@@ -88,7 +88,9 @@ lists every setting.
    ```
 
    Without `existingSecret`, set `credentials.applicationKey`, `applicationSecret` and
-   `consumerKey` instead and the chart creates the secret.
+   `consumerKey` instead and the chart creates the secret. A `helm upgrade` rolls the pod when the
+   secret's content has changed; a secret changed without one needs
+   `kubectl rollout restart deployment/ovh-autobackup-deferrer`.
 3. Install: `helm upgrade --install ovh-autobackup-deferrer ./helm -n <namespace> -f <values>`.
    The pod needs outbound HTTPS to the API and DNS, nothing else.
 4. Check the logs: one `written` line for the VPS, and the new time in the control panel a few
