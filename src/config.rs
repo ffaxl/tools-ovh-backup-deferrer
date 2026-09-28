@@ -100,15 +100,13 @@ fn parse_services(list: &str) -> Result<Vec<Service>, ConfigError> {
             .rsplit_once(':')
             .filter(|(name, minutes)| !name.is_empty() && !minutes.is_empty())
             .ok_or_else(malformed)?;
-        let minutes: u32 = minutes.parse().map_err(|_| malformed())?;
+        let minutes: u8 = minutes.parse().map_err(|_| malformed())?;
 
         if !is_path_segment(name) {
             return Err(ConfigError::InvalidServiceName(name.into()));
         }
-        let offset = u8::try_from(minutes)
-            .ok()
-            .and_then(Offset::from_minutes)
-            .ok_or_else(|| ConfigError::OffsetOutOfRange {
+        let offset =
+            Offset::from_minutes(minutes).ok_or_else(|| ConfigError::OffsetOutOfRange {
                 service: name.into(),
             })?;
         if services.iter().any(|service| service.name == name) {
