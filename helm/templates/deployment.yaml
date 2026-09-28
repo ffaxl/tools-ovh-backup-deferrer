@@ -23,8 +23,6 @@ spec:
         {{- end }}
     spec:
       automountServiceAccountToken: false
-      # Covers one in-flight request, whose timeout is 30 s.
-      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         seccompProfile:
