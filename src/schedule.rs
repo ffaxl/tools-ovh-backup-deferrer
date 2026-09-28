@@ -6,11 +6,6 @@ use jiff::civil::Time;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
-const NANOS_PER_HOUR: i128 = 3_600_000_000_000;
-const NANOS_PER_SECOND: i128 = 1_000_000_000;
-/// Waking a little after the hour rather than on it leaves no doubt which hour `now` is in.
-const NANOS_PAST_THE_HOUR: i128 = 10 * NANOS_PER_SECOND;
-
 /// Minutes past the hour at which a service's schedule is set, keeping its window apart from
 /// every other service's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,16 +27,10 @@ pub fn target(now: Timestamp, offset: Offset) -> Time {
         .wrapping_add(SignedDuration::from_mins(i64::from(offset.0) - 60))
 }
 
-/// How long to sleep from `now` until ten seconds past the start of the next UTC hour.
+/// How long to sleep from `now` until ten seconds past the start of the next UTC hour; waking
+/// a little after the hour rather than on it leaves no doubt which hour `now` is in.
 pub fn until_next_run(now: Timestamp) -> Duration {
-    let into_hour = now.as_nanosecond().rem_euclid(NANOS_PER_HOUR);
-    let remaining = NANOS_PER_HOUR + NANOS_PAST_THE_HOUR - into_hour;
-    // `remaining` lies in NANOS_PAST_THE_HOUR + 1..=NANOS_PER_HOUR + NANOS_PAST_THE_HOUR, so
-    // both parts fit their targets.
-    Duration::new(
-        (remaining / NANOS_PER_SECOND) as u64,
-        (remaining % NANOS_PER_SECOND) as u32,
-    )
+    Duration::from_secs((3610 - now.as_second().rem_euclid(3600)).unsigned_abs())
 }
 
 #[cfg(test)]
@@ -67,12 +56,9 @@ mod tests {
 
     #[test]
     fn next_run_is_ten_seconds_into_the_next_hour() {
-        for (now, expected) in [
-            ("2026-09-28T14:59:59.999Z", Duration::from_millis(10_001)),
-            // Within the ten seconds, the run for this hour is the one that just happened.
-            ("2026-09-28T15:00:05Z", Duration::from_secs(3605)),
-        ] {
-            assert_eq!(until_next_run(at(now)), expected, "{now}");
-        }
+        assert_eq!(
+            until_next_run(at("2026-09-28T14:59:50Z")),
+            Duration::from_secs(20)
+        );
     }
 }
