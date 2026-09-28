@@ -15,12 +15,10 @@ spec:
     metadata:
       labels:
         {{- include "deferrer.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
       annotations:
-        # A changed secret does not reach a running pod; this rolls it on the next helm upgrade.
-        checksum/secret: {{ include "deferrer.secretChecksum" . }}
-        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
     spec:
       automountServiceAccountToken: false
       securityContext:

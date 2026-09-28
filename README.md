@@ -88,8 +88,8 @@ chart's `appVersion`; [helm/values.yaml](helm/values.yaml) documents its setting
    where `<file>` holds `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET` and `OVH_CONSUMER_KEY`, one
    `NAME=value` per line.
 
-   A `helm upgrade` rolls the pod when the secret's content has changed; a secret changed without
-   one needs `kubectl -n <namespace> rollout restart deployment/ovh-autobackup-deferrer`.
+   A running pod does not see a changed secret: after rotating the keys, run
+   `kubectl -n <namespace> rollout restart deployment/ovh-autobackup-deferrer`.
 3. Write a values file, kept out of this repository, listing a single VPS at first:
 
    ```yaml

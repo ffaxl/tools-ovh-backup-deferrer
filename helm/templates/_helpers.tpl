@@ -23,11 +23,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- range .Values.services }}
 {{- $name := required "every entry in services needs a name" .name }}
 {{- $offset := required (printf "service %s needs an offset" $name) .offset }}
-{{- $entries = append $entries (printf "%s:%d" $name (int $offset)) }}
+{{- $entries = append $entries (printf "%s:%v" $name $offset) }}
 {{- end }}
 {{- join "," $entries }}
-{{- end }}
-
-{{- define "deferrer.secretChecksum" -}}
-{{- (lookup "v1" "Secret" .Release.Namespace (include "deferrer.secretName" .)).data | toJson | sha256sum }}
 {{- end }}
