@@ -4,7 +4,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "deferrer.secretName" -}}
-{{- .Values.credentials.existingSecret | default .Release.Name }}
+{{- required "credentialsSecret must name the secret holding the API keys" .Values.credentialsSecret }}
 {{- end }}
 
 {{- define "deferrer.image" -}}
@@ -29,9 +29,5 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "deferrer.secretChecksum" -}}
-{{- if .Values.credentials.existingSecret }}
-{{- (lookup "v1" "Secret" .Release.Namespace .Values.credentials.existingSecret).data | toJson | sha256sum }}
-{{- else }}
-{{- include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
-{{- end }}
+{{- (lookup "v1" "Secret" .Release.Namespace (include "deferrer.secretName" .)).data | toJson | sha256sum }}
 {{- end }}

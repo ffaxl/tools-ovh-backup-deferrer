@@ -77,25 +77,32 @@ chart's `appVersion`; [helm/values.yaml](helm/values.yaml) documents its setting
 
 1. Note the current backup time of every VPS from the control panel, somewhere private; rollback
    writes these back.
-2. Write a values file, kept out of this repository, listing a single VPS at first:
+2. Create the secret with the API keys in the namespace you deploy to, by hand or through the
+   cluster's secret store:
+
+   ```sh
+   kubectl -n <namespace> create secret generic ovh-api --from-env-file=<file>
+   ```
+
+   where `<file>` holds `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET` and `OVH_CONSUMER_KEY`, one
+   `NAME=value` per line.
+
+   A `helm upgrade` rolls the pod when the secret's content has changed; a secret changed without
+   one needs `kubectl -n <namespace> rollout restart deployment/ovh-autobackup-deferrer`.
+3. Write a values file, kept out of this repository, listing a single VPS at first:
 
    ```yaml
+   credentialsSecret: ovh-api
    services:
      - name: vps-aaaa.vps.ovh.net
        offset: 0
-   credentials:
-     existingSecret: ovh-api  # holds OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, OVH_CONSUMER_KEY
    ```
 
-   Without `existingSecret`, set `credentials.applicationKey`, `applicationSecret` and
-   `consumerKey` instead and the chart creates the secret. A `helm upgrade` rolls the pod when the
-   secret's content has changed; a secret changed without one needs
-   `kubectl rollout restart deployment/ovh-autobackup-deferrer`.
-3. Install: `helm upgrade --install ovh-autobackup-deferrer ./helm -n <namespace> -f <values>`.
+4. Install: `helm upgrade --install ovh-autobackup-deferrer ./helm -n <namespace> -f <values>`.
    The pod needs outbound HTTPS to the API and DNS, nothing else.
-4. Check the logs: one `written` line for the VPS, and the new time in the control panel a few
+5. Check the logs: one `written` line for the VPS, and the new time in the control panel a few
    minutes later.
-5. Watch it for 72 hours: no new restore point in the control panel and no guest pause at its old
+6. Watch it for 72 hours: no new restore point in the control panel and no guest pause at its old
    backup time. Then add the rest to `services` and upgrade again.
 
 Rollback: `helm uninstall ovh-autobackup-deferrer -n <namespace>`, then set the noted backup times
