@@ -1,17 +1,20 @@
-//! The hourly cycle over the configured services.
+//! The hourly cycle over the configured services: what to write, and when.
 
-use jiff::Timestamp;
+use std::time::Duration;
+
+use jiff::civil::Time;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use tracing::{info, warn};
 
 use crate::config::Service;
 use crate::ovh::Client;
-use crate::schedule;
 
 /// Runs a cycle now and then shortly after every full UTC hour, forever.
 pub async fn run(client: &Client, services: &[Service], dry_run: bool) {
     loop {
         run_cycle(client, services, Timestamp::now(), dry_run).await;
-        tokio::time::sleep(schedule::until_next_run(Timestamp::now())).await;
+        tokio::time::sleep(until_next_run(Timestamp::now())).await;
     }
 }
 
@@ -20,7 +23,7 @@ pub async fn run(client: &Client, services: &[Service], dry_run: bool) {
 async fn run_cycle(client: &Client, services: &[Service], now: Timestamp, dry_run: bool) {
     for service in services {
         let name = service.name.as_str();
-        let target = schedule::target(now, service.offset);
+        let target = target(now, service.offset);
         if dry_run {
             info!(service = name, %target, outcome = "dry-run");
             continue;
@@ -34,8 +37,23 @@ async fn run_cycle(client: &Client, services: &[Service], now: Timestamp, dry_ru
     }
 }
 
+/// The schedule to write at `now`: the start of the previous UTC hour, plus the offset.
+fn target(now: Timestamp, offset: u8) -> Time {
+    let hour = now.to_zoned(TimeZone::UTC).time().hour();
+    Time::midnight()
+        .wrapping_add(SignedDuration::from_hours(i64::from(hour)))
+        .wrapping_add(SignedDuration::from_mins(i64::from(offset) - 60))
+}
+
+/// How long to sleep from `now` until ten seconds past the start of the next UTC hour; waking
+/// a little after the hour rather than on it leaves no doubt which hour `now` is in.
+fn until_next_run(now: Timestamp) -> Duration {
+    Duration::from_secs((3610 - now.as_second().rem_euclid(3600)).unsigned_abs())
+}
+
 #[cfg(test)]
 mod tests {
+    use jiff::civil::time;
     use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -55,8 +73,12 @@ mod tests {
         ]
     }
 
+    fn at(s: &str) -> Timestamp {
+        s.parse().unwrap()
+    }
+
     fn just_after_the_hour() -> Timestamp {
-        "2026-09-28T15:00:10Z".parse().unwrap()
+        at("2026-09-28T15:00:10Z")
     }
 
     #[tokio::test]
@@ -100,5 +122,23 @@ mod tests {
 
         let requests = server.received_requests().await.unwrap();
         assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn target_is_the_previous_hour_plus_the_offset() {
+        for (now, minutes, expected) in [
+            ("2026-09-28T15:37:12.5Z", 20, time(14, 20, 0, 0)),
+            ("2026-09-28T00:20:00Z", 40, time(23, 40, 0, 0)),
+        ] {
+            assert_eq!(target(at(now), minutes), expected, "{now} +{minutes}");
+        }
+    }
+
+    #[test]
+    fn next_run_is_ten_seconds_into_the_next_hour() {
+        assert_eq!(
+            until_next_run(at("2026-09-28T14:59:50Z")),
+            Duration::from_secs(20)
+        );
     }
 }

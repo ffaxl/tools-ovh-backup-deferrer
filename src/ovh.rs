@@ -33,6 +33,25 @@ pub enum Error {
     },
 }
 
+/// The API root for a region key as the official SDKs name them.
+pub fn base_url(endpoint: &str) -> Option<&'static str> {
+    match endpoint {
+        "ovh-eu" => Some("https://eu.api.ovh.com/1.0"),
+        "ovh-ca" => Some("https://ca.api.ovh.com/1.0"),
+        "ovh-us" => Some("https://api.us.ovhcloud.com/1.0"),
+        _ => None,
+    }
+}
+
+/// Whether `name` can go into the request path verbatim: no separators, and no `.` or `..`
+/// that URL normalisation would resolve into a different path than the one signed.
+pub fn is_service_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+}
+
 /// The `X-Ovh-Signature` value for one request.
 pub fn signature(
     application_secret: &str,

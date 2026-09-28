@@ -1,6 +1,6 @@
 //! Configuration from environment variables, rejected whole at startup if any part is wrong.
 
-use crate::ovh::Credentials;
+use crate::ovh::{self, Credentials};
 
 pub struct Config {
     pub base_url: String,
@@ -53,7 +53,7 @@ impl Config {
         let required = |name: &'static str| optional(name).ok_or(ConfigError::Missing(name));
 
         let endpoint = optional("OVH_ENDPOINT").unwrap_or_else(|| "ovh-ca".into());
-        let base_url = base_url(&endpoint).ok_or(ConfigError::UnknownEndpoint(endpoint))?;
+        let base_url = ovh::base_url(&endpoint).ok_or(ConfigError::UnknownEndpoint(endpoint))?;
         let credentials = Credentials {
             application_key: required("OVH_APPLICATION_KEY")?,
             application_secret: required("OVH_APPLICATION_SECRET")?,
@@ -75,24 +75,6 @@ impl Config {
     }
 }
 
-fn base_url(endpoint: &str) -> Option<&'static str> {
-    match endpoint {
-        "ovh-eu" => Some("https://eu.api.ovh.com/1.0"),
-        "ovh-ca" => Some("https://ca.api.ovh.com/1.0"),
-        "ovh-us" => Some("https://api.us.ovhcloud.com/1.0"),
-        _ => None,
-    }
-}
-
-/// Whether `name` can go into the request path verbatim: no separators, and no `.` or `..`
-/// that URL normalisation would resolve into a different path than the one signed.
-fn is_path_segment(name: &str) -> bool {
-    name.starts_with(|c: char| c.is_ascii_alphanumeric())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
-}
-
 fn parse_services(list: &str) -> Result<Vec<Service>, ConfigError> {
     let mut services: Vec<Service> = Vec::new();
     for entry in list.split(',').map(str::trim) {
@@ -100,7 +82,7 @@ fn parse_services(list: &str) -> Result<Vec<Service>, ConfigError> {
         let (name, minutes) = entry.rsplit_once(':').ok_or_else(malformed)?;
         let offset: u8 = minutes.parse().map_err(|_| malformed())?;
 
-        if !is_path_segment(name) {
+        if !ovh::is_service_name(name) {
             return Err(ConfigError::InvalidServiceName(name.into()));
         }
         if offset > 59 {

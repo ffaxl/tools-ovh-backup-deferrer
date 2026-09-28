@@ -1,7 +1,6 @@
 mod config;
-mod deferrer;
+mod cycle;
 mod ovh;
-mod schedule;
 
 use std::error::Error;
 use std::process::ExitCode;
@@ -55,7 +54,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     );
     // Dropping the loop mid-request is harmless: every write is repeated an hour later.
     tokio::select! {
-        () = deferrer::run(&client, &config.services, config.dry_run) => {}
+        () = cycle::run(&client, &config.services, config.dry_run) => {}
         () = terminated => info!("terminated"),
     }
     Ok(())
