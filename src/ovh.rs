@@ -26,8 +26,8 @@ pub fn base_url(endpoint: &str) -> Option<&'static str> {
     }
 }
 
-/// Whether `name` can go into the request path verbatim: no separators, and no `.` or `..`
-/// that URL normalisation would resolve into a different path than the one signed.
+/// Whether `name` can go into the request path verbatim: no separators, and not exactly `.` or
+/// `..`, which URL normalisation would resolve into a different path than the one signed.
 pub fn is_service_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_alphanumeric())
         && name
