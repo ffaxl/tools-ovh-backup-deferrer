@@ -6,25 +6,12 @@ use jiff::civil::Time;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
-/// Minutes past the hour at which a service's schedule is set, keeping its window apart from
-/// every other service's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Offset(u8);
-
-impl Offset {
-    const MAX_MINUTES: u8 = 59;
-
-    pub fn from_minutes(minutes: u8) -> Option<Self> {
-        (minutes <= Self::MAX_MINUTES).then_some(Self(minutes))
-    }
-}
-
 /// The schedule to write at `now`: the start of the previous UTC hour, plus the offset.
-pub fn target(now: Timestamp, offset: Offset) -> Time {
+pub fn target(now: Timestamp, offset: u8) -> Time {
     let hour = now.to_zoned(TimeZone::UTC).time().hour();
     Time::midnight()
         .wrapping_add(SignedDuration::from_hours(i64::from(hour)))
-        .wrapping_add(SignedDuration::from_mins(i64::from(offset.0) - 60))
+        .wrapping_add(SignedDuration::from_mins(i64::from(offset) - 60))
 }
 
 /// How long to sleep from `now` until ten seconds past the start of the next UTC hour; waking
@@ -49,8 +36,7 @@ mod tests {
             ("2026-09-28T15:37:12.5Z", 20, time(14, 20, 0, 0)),
             ("2026-09-28T00:20:00Z", 40, time(23, 40, 0, 0)),
         ] {
-            let offset = Offset::from_minutes(minutes).unwrap();
-            assert_eq!(target(at(now), offset), expected, "{now} +{minutes}");
+            assert_eq!(target(at(now), minutes), expected, "{now} +{minutes}");
         }
     }
 

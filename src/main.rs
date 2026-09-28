@@ -1,11 +1,17 @@
+mod config;
+mod deferrer;
+mod ovh;
+mod schedule;
+
+use std::error::Error;
 use std::process::ExitCode;
 
-use ovh_autobackup_deferrer::config::Config;
-use ovh_autobackup_deferrer::deferrer;
-use ovh_autobackup_deferrer::ovh::Client;
 use tracing::level_filters::LevelFilter;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+
+use crate::config::Config;
+use crate::ovh::Client;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -26,27 +32,21 @@ async fn main() -> ExitCode {
         .with_env_filter(filter)
         .init();
 
-    let config = match Config::from_env() {
-        Ok(config) => config,
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            error!(%error, "configuration rejected");
-            return ExitCode::FAILURE;
+            error!(error = chain(error.as_ref()), "startup failed");
+            ExitCode::FAILURE
         }
-    };
-    let client = match Client::new(config.base_url, config.credentials) {
-        Ok(client) => client,
-        Err(error) => {
-            error!(%error, "HTTP client setup failed");
-            return ExitCode::FAILURE;
-        }
-    };
-    let terminated = match termination() {
-        Ok(terminated) => terminated,
-        Err(error) => {
-            error!(%error, "cannot listen for SIGTERM");
-            return ExitCode::FAILURE;
-        }
-    };
+    }
+}
+
+/// Returns on SIGTERM, or with whatever prevented the start.
+async fn run() -> Result<(), Box<dyn Error>> {
+    let config = Config::from_env()?;
+    let client = Client::new(config.base_url, config.credentials)?;
+    let terminated =
+        termination().map_err(|error| format!("cannot listen for SIGTERM: {error}"))?;
 
     info!(
         services = config.services.len(),
@@ -58,7 +58,19 @@ async fn main() -> ExitCode {
         () = deferrer::run(&client, &config.services, config.dry_run) => {}
         () = terminated => info!("terminated"),
     }
-    ExitCode::SUCCESS
+    Ok(())
+}
+
+/// The error and every cause beneath it; the JSON log records an error's `Display` only.
+fn chain(error: &dyn Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
 }
 
 /// Resolves on SIGTERM, which a process running as PID 1 in a container would otherwise ignore.

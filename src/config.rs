@@ -1,7 +1,6 @@
 //! Configuration from environment variables, rejected whole at startup if any part is wrong.
 
 use crate::ovh::Credentials;
-use crate::schedule::Offset;
 
 pub struct Config {
     pub base_url: String,
@@ -13,7 +12,9 @@ pub struct Config {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Service {
     pub name: String,
-    pub offset: Offset,
+    /// Minutes past the hour at which the schedule is set, keeping this service's backup window
+    /// apart from every other service's.
+    pub offset: u8,
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -53,11 +54,11 @@ impl Config {
 
         let endpoint = optional("OVH_ENDPOINT").unwrap_or_else(|| "ovh-ca".into());
         let base_url = base_url(&endpoint).ok_or(ConfigError::UnknownEndpoint(endpoint))?;
-        let credentials = Credentials::new(
-            required("OVH_APPLICATION_KEY")?,
-            required("OVH_APPLICATION_SECRET")?,
-            required("OVH_CONSUMER_KEY")?,
-        );
+        let credentials = Credentials {
+            application_key: required("OVH_APPLICATION_KEY")?,
+            application_secret: required("OVH_APPLICATION_SECRET")?,
+            consumer_key: required("OVH_CONSUMER_KEY")?,
+        };
         let services = parse_services(&required("DEFERRER_SERVICES")?)?;
         let dry_run = match optional("DEFERRER_DRY_RUN").as_deref() {
             Some("true") => true,
@@ -96,19 +97,17 @@ fn parse_services(list: &str) -> Result<Vec<Service>, ConfigError> {
     let mut services: Vec<Service> = Vec::new();
     for entry in list.split(',').map(str::trim) {
         let malformed = || ConfigError::MalformedService(entry.into());
-        let (name, minutes) = entry
-            .rsplit_once(':')
-            .filter(|(name, minutes)| !name.is_empty() && !minutes.is_empty())
-            .ok_or_else(malformed)?;
-        let minutes: u8 = minutes.parse().map_err(|_| malformed())?;
+        let (name, minutes) = entry.rsplit_once(':').ok_or_else(malformed)?;
+        let offset: u8 = minutes.parse().map_err(|_| malformed())?;
 
         if !is_path_segment(name) {
             return Err(ConfigError::InvalidServiceName(name.into()));
         }
-        let offset =
-            Offset::from_minutes(minutes).ok_or_else(|| ConfigError::OffsetOutOfRange {
+        if offset > 59 {
+            return Err(ConfigError::OffsetOutOfRange {
                 service: name.into(),
-            })?;
+            });
+        }
         if services.iter().any(|service| service.name == name) {
             return Err(ConfigError::DuplicateService(name.into()));
         }
@@ -145,10 +144,10 @@ mod tests {
         Config::from_lookup(|name| vars.get(name).map(|value| value.to_string()))
     }
 
-    fn service(name: &str, minutes: u8) -> Service {
+    fn service(name: &str, offset: u8) -> Service {
         Service {
             name: name.into(),
-            offset: Offset::from_minutes(minutes).unwrap(),
+            offset,
         }
     }
 
@@ -198,7 +197,7 @@ mod tests {
                 "vps-a.example:",
                 MalformedService("vps-a.example:".into()),
             ),
-            ("DEFERRER_SERVICES", ":20", MalformedService(":20".into())),
+            ("DEFERRER_SERVICES", ":20", InvalidServiceName("".into())),
             (
                 "DEFERRER_SERVICES",
                 "vps-a.example:x",
