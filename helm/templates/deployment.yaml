@@ -41,8 +41,10 @@ spec:
               value: {{ include "deferrer.services" . | quote }}
             - name: RUST_LOG
               value: {{ .Values.logLevel | quote }}
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
