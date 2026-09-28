@@ -2,25 +2,33 @@
 
 use std::time::Duration;
 
+use anyhow::{Result, bail};
+
 use jiff::civil::Time;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
-use tracing::{info, warn};
+use tracing::{error, info};
 
 use crate::config::Service;
 use crate::ovh::Client;
 
-/// Runs a cycle now and then shortly after every full UTC hour, forever.
-pub async fn run(client: &Client, services: &[Service], dry_run: bool) {
+/// Runs a cycle now and then shortly after every full UTC hour, until a cycle fails.
+pub async fn run(client: &Client, services: &[Service], dry_run: bool) -> Result<()> {
     loop {
-        run_cycle(client, services, Timestamp::now(), dry_run).await;
+        run_cycle(client, services, Timestamp::now(), dry_run).await?;
         tokio::time::sleep(until_next_run(Timestamp::now())).await;
     }
 }
 
-/// Writes every service's target for `now`, one after another; a failure is logged and the
-/// next service still runs.
-async fn run_cycle(client: &Client, services: &[Service], now: Timestamp, dry_run: bool) {
+/// Writes every service's target for `now`, one after another. A failed service does not stop
+/// the others, but fails the cycle.
+async fn run_cycle(
+    client: &Client,
+    services: &[Service],
+    now: Timestamp,
+    dry_run: bool,
+) -> Result<()> {
+    let mut failed = 0;
     for service in services {
         let name = service.name.as_str();
         let target = target(now, service.offset);
@@ -31,10 +39,15 @@ async fn run_cycle(client: &Client, services: &[Service], now: Timestamp, dry_ru
         match client.reschedule(name, target).await {
             Ok(()) => info!(service = name, %target, outcome = "written"),
             Err(error) => {
-                warn!(service = name, %target, outcome = "failed", error = crate::chain(&error));
+                error!(service = name, %target, outcome = "failed", error = format!("{error:#}"));
+                failed += 1;
             }
         }
     }
+    if failed > 0 {
+        bail!("{failed} of {} services failed", services.len());
+    }
+    Ok(())
 }
 
 /// The schedule to write at `now`: the start of the previous UTC hour, plus the offset.
@@ -82,7 +95,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_service_is_written_at_its_offset_even_after_a_failure() {
+    async fn a_failure_fails_the_cycle_after_every_service_is_written() {
         let server = MockServer::start().await;
         for (service, schedule, status) in [
             ("vps-a.example", "14:00:00", 500),
@@ -99,13 +112,15 @@ mod tests {
                 .await;
         }
 
-        run_cycle(
+        let cycle = run_cycle(
             &client_of(&server),
             &services(),
             just_after_the_hour(),
             false,
         )
         .await;
+
+        assert!(cycle.is_err());
     }
 
     #[tokio::test]
@@ -118,7 +133,8 @@ mod tests {
             just_after_the_hour(),
             true,
         )
-        .await;
+        .await
+        .unwrap();
 
         let requests = server.received_requests().await.unwrap();
         assert!(requests.is_empty());

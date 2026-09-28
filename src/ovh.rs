@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use anyhow::{Context, Result, bail};
 use jiff::Timestamp;
 use jiff::civil::Time;
 use reqwest::header::CONTENT_TYPE;
@@ -13,24 +14,6 @@ pub struct Credentials {
     pub application_key: String,
     pub application_secret: String,
     pub consumer_key: String,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("cannot set up the HTTP client")]
-    Setup(#[source] reqwest::Error),
-    #[error("POST {url} failed")]
-    Transport {
-        url: String,
-        #[source]
-        source: reqwest::Error,
-    },
-    #[error("POST {url} returned {status}: {body}")]
-    Status {
-        url: String,
-        status: reqwest::StatusCode,
-        body: String,
-    },
 }
 
 /// The API root for a region key as the official SDKs name them.
@@ -72,11 +55,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(base_url: impl Into<String>, credentials: Credentials) -> Result<Self, Error> {
+    pub fn new(base_url: impl Into<String>, credentials: Credentials) -> Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .build()
-            .map_err(Error::Setup)?;
+            .context("cannot set up the HTTP client")?;
         Ok(Self {
             http,
             base_url: base_url.into(),
@@ -85,7 +68,7 @@ impl Client {
     }
 
     /// Queues the change; the provider applies it asynchronously, minutes later.
-    pub async fn reschedule(&self, service: &str, schedule: Time) -> Result<(), Error> {
+    pub async fn reschedule(&self, service: &str, schedule: Time) -> Result<()> {
         let url = format!("{}/vps/{service}/automatedBackup/reschedule", self.base_url);
         let body = serde_json::json!({ "schedule": schedule }).to_string();
         let timestamp = Timestamp::now().as_second();
@@ -98,11 +81,6 @@ impl Client {
             &body,
             timestamp,
         );
-        let transport = |source| Error::Transport {
-            url: url.clone(),
-            source,
-        };
-
         let response = self
             .http
             .post(&url)
@@ -114,16 +92,18 @@ impl Client {
             .body(body)
             .send()
             .await
-            .map_err(transport)?;
+            .with_context(|| format!("POST {url} failed"))?;
         let status = response.status();
         if status.is_success() {
             return Ok(());
         }
-        Err(Error::Status {
-            status,
-            body: response.text().await.map_err(transport)?,
-            url,
-        })
+        // The status is the diagnosis; the body only elaborates, so failing to read it must not
+        // replace the status in the error.
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|error| format!("(body unreadable: {error})"));
+        bail!("POST {url} returned {status}: {body}")
     }
 }
 

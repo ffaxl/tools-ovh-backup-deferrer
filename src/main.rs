@@ -2,8 +2,9 @@ mod config;
 mod cycle;
 mod ovh;
 
-use std::error::Error;
 use std::process::ExitCode;
+
+use anyhow::{Context, Result};
 
 use tracing::level_filters::LevelFilter;
 use tracing::{error, info};
@@ -12,7 +13,7 @@ use tracing_subscriber::EnvFilter;
 use crate::config::Config;
 use crate::ovh::Client;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let filter = match EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
@@ -34,18 +35,18 @@ async fn main() -> ExitCode {
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            error!(error = chain(error.as_ref()), "startup failed");
+            error!(error = format!("{error:#}"), "stopped");
             ExitCode::FAILURE
         }
     }
 }
 
-/// Returns on SIGTERM, or with whatever prevented the start.
-async fn run() -> Result<(), Box<dyn Error>> {
+/// Returns on SIGTERM, or with whatever prevented the start or failed a cycle; the exit status
+/// then makes the failure visible as a restarting pod.
+async fn run() -> Result<()> {
     let config = Config::from_env()?;
     let client = Client::new(config.base_url, config.credentials)?;
-    let terminated =
-        termination().map_err(|error| format!("cannot listen for SIGTERM: {error}"))?;
+    let terminated = termination().context("cannot listen for SIGTERM")?;
 
     info!(
         services = config.services.len(),
@@ -54,22 +55,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
     );
     // Dropping the loop mid-request is harmless: every write is repeated an hour later.
     tokio::select! {
-        () = cycle::run(&client, &config.services, config.dry_run) => {}
-        () = terminated => info!("terminated"),
+        cycle = cycle::run(&client, &config.services, config.dry_run) => cycle,
+        () = terminated => {
+            info!("terminated");
+            Ok(())
+        }
     }
-    Ok(())
-}
-
-/// The error and every cause beneath it; the JSON log records an error's `Display` only.
-fn chain(error: &dyn Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    text
 }
 
 /// Resolves on SIGTERM, which a process running as PID 1 in a container would otherwise ignore.
