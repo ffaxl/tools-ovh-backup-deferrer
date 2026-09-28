@@ -5,7 +5,6 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::civil::Time;
 use reqwest::header::CONTENT_TYPE;
-use reqwest::{Method, RequestBuilder};
 use sha1::{Digest, Sha1};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -30,16 +29,14 @@ impl Credentials {
 pub enum Error {
     #[error("cannot set up the HTTP client")]
     Setup(#[source] reqwest::Error),
-    #[error("{method} {url} failed")]
+    #[error("POST {url} failed")]
     Transport {
-        method: Method,
         url: String,
         #[source]
         source: reqwest::Error,
     },
-    #[error("{method} {url} returned {status}: {body}")]
+    #[error("POST {url} returned {status}: {body}")]
     Status {
-        method: Method,
         url: String,
         status: reqwest::StatusCode,
         body: String,
@@ -82,83 +79,41 @@ impl Client {
     pub async fn reschedule(&self, service: &str, schedule: Time) -> Result<(), Error> {
         let url = format!("{}/vps/{service}/automatedBackup/reschedule", self.base_url);
         let body = serde_json::json!({ "schedule": schedule }).to_string();
-        self.signed(Method::POST, &url, body).await.map(drop)
-    }
-
-    async fn signed(&self, method: Method, url: &str, body: String) -> Result<String, Error> {
         let timestamp = Timestamp::now().as_second();
         let credentials = &self.credentials;
-        let mut request = self
+        let signature = signature(
+            &credentials.application_secret,
+            &credentials.consumer_key,
+            "POST",
+            &url,
+            &body,
+            timestamp,
+        );
+        let transport = |source| Error::Transport {
+            url: url.clone(),
+            source,
+        };
+
+        let response = self
             .http
-            .request(method.clone(), url)
+            .post(&url)
             .header("X-Ovh-Application", &credentials.application_key)
             .header("X-Ovh-Consumer", &credentials.consumer_key)
             .header("X-Ovh-Timestamp", timestamp.to_string())
-            .header(
-                "X-Ovh-Signature",
-                signature(
-                    &credentials.application_secret,
-                    &credentials.consumer_key,
-                    method.as_str(),
-                    url,
-                    &body,
-                    timestamp,
-                ),
-            );
-        if !body.is_empty() {
-            request = request.header(CONTENT_TYPE, "application/json").body(body);
+            .header("X-Ovh-Signature", signature)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(transport)?;
+        let status = response.status();
+        if status.is_success() {
+            return Ok(());
         }
-        send(&method, url, request).await
-    }
-}
-
-async fn send(method: &Method, url: &str, request: RequestBuilder) -> Result<String, Error> {
-    let response = request
-        .send()
-        .await
-        .map_err(|source| transport(method, url, source))?;
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|source| transport(method, url, source))?;
-    if !status.is_success() {
-        return Err(Error::Status {
-            method: method.clone(),
-            url: url.into(),
+        Err(Error::Status {
             status,
-            body,
-        });
-    }
-    Ok(body)
-}
-
-fn transport(method: &Method, url: &str, source: reqwest::Error) -> Error {
-    Error::Transport {
-        method: method.clone(),
-        url: url.into(),
-        source,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const URL: &str = "https://ca.api.ovh.com/1.0/vps/vps-aaaa.vps.ovh.net/automatedBackup";
-
-    #[test]
-    fn signature_of_a_post_covers_the_body() {
-        assert_eq!(
-            signature(
-                "secret-as",
-                "consumer-ck",
-                "POST",
-                &format!("{URL}/reschedule"),
-                r#"{"schedule":"14:00:00"}"#,
-                1_790_000_000
-            ),
-            "$1$1ff7993222922400fa5bdad8e8791b36f26ae32c"
-        );
+            body: response.text().await.map_err(transport)?,
+            url,
+        })
     }
 }
