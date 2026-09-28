@@ -71,10 +71,13 @@ Without `DEFERRER_DRY_RUN=true` this writes the schedules.
 
 ## Deploying
 
-CI runs the tests on every pull request and push, and publishes the image to
-`ghcr.io/ffaxl/tools-ovh-backup-deferrer` only for a `v<version>` tag, tagged `<version>`. The Helm
-chart in [helm/](helm/) runs it as a single-replica Deployment, by default with the image of the
-chart's `appVersion`; [helm/values.yaml](helm/values.yaml) documents its settings.
+CI runs the tests on every pull request and push. For a `v<version>` tag it publishes, both as
+`<version>`:
+
+- the image `ghcr.io/ffaxl/tools-ovh-backup-deferrer`;
+- the Helm chart `oci://ghcr.io/ffaxl/tools-ovh-backup-deferrer/ovh-autobackup-deferrer`, which
+  runs that image as a single-replica Deployment. [helm/values.yaml](helm/values.yaml) documents
+  its settings.
 
 1. Note the current backup time of every VPS from the control panel, somewhere private; rollback
    writes these back.
@@ -99,8 +102,15 @@ chart's `appVersion`; [helm/values.yaml](helm/values.yaml) documents its setting
        offset: 0
    ```
 
-4. Install: `helm upgrade --install ovh-autobackup-deferrer ./helm -n <namespace> -f <values>`.
-   The pod needs outbound HTTPS to the API and DNS, nothing else.
+4. Install:
+
+   ```sh
+   helm upgrade --install ovh-autobackup-deferrer      oci://ghcr.io/ffaxl/tools-ovh-backup-deferrer/ovh-autobackup-deferrer      --version <version> -n <namespace> -f <values>
+   ```
+
+   For Argo CD, the same chart is the source with `repoURL: ghcr.io/ffaxl/tools-ovh-backup-deferrer`
+   and `chart: ovh-autobackup-deferrer`. The pod needs outbound HTTPS to the API and DNS, nothing
+   else.
 5. Check the logs: one `written` line for the VPS, and the new time in the control panel a few
    minutes later.
 6. Watch it for 72 hours: no new restore point in the control panel and no guest pause at its old

@@ -30,6 +30,11 @@ jobs:
       - name: test
         run: cargo test --locked
 
+      - uses: azure/setup-helm@v5
+
+      - name: helm lint
+        run: helm lint helm --strict --set credentialsSecret=ci --set services[0].name=vps-a.example --set services[0].offset=0
+
   # Separate job so an advisory hit is unambiguous in the checks list, rather than buried in
   # the same log as an unrelated clippy or test failure.
   security:
@@ -77,3 +82,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  chart:
+    needs: [check, security]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+
+      # The tag is the one version source for both artifacts, so the chart and its default image
+      # tag cannot drift from the image this run publishes.
+      - name: package and push
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          helm package helm --version "$version" --app-version "$version"
+          echo "$TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push "ovh-autobackup-deferrer-$version.tgz" "oci://ghcr.io/${{ github.repository }}"
