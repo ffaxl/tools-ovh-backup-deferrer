@@ -1,0 +1,31 @@
+image:
+  repository: ghcr.io/ffaxl/tools-ovh-backup-deferrer
+  # Defaults to the chart's appVersion.
+  tag: ""
+  # Takes precedence over the tag when set, e.g. sha256:...
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# API region: ovh-eu, ovh-ca or ovh-us.
+endpoint: ovh-ca
+
+# VPS to defer, each with its own offset in minutes (0-59). Offsets must differ; keep them well
+# apart, e.g. 0, 20 and 40.
+services: []
+#  - name: vps-aaaa.vps.ovh.net
+#    offset: 0
+#  - name: vps-bbbb.vps.ovh.net
+#    offset: 20
+
+# Name of an existing secret with the keys OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET and
+# OVH_CONSUMER_KEY.
+credentialsSecret: ""
+
+logLevel: info
+
+resources: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
